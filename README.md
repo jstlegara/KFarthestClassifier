@@ -1,1 +1,1 @@
-# KNearestClassifier
+# KFarthestClassifier
