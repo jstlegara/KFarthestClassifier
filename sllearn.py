@@ -116,7 +116,9 @@ def auto_modeller(X, y, model_class, test_size=0.25, simulations=100):
     y = np.asarray(y)
     
     for seed in trange(1, simulations + 1, desc="Simulations"):
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=seed)
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=test_size, random_state=seed
+        )
         
         train_accuracy = []
         test_accuracy = []
@@ -193,8 +195,7 @@ def compare_model_plots(model_1, model_2, accuracy_type='test'):
           f' for {k_values_2[means_2.argmax()]} neighbors')
 
 
-def combined_model_weighting(X, y, max_neighbor, max_farthest,
-                             test_size=0.25, simulations=1000, weight_step=0.01):
+def combined_model_weighting(X, y, max_neighbor, max_farthest, test_size=0.25, simulations=1000, weight_step=0.01):
     """
     Performs weighted averaging of KNN and KFN model predictions to find the optimal weight.
 
@@ -212,8 +213,8 @@ def combined_model_weighting(X, y, max_neighbor, max_farthest,
     - wa_validation: DataFrame with validation accuracies for each simulation
     - weight_settings: Array of weight settings tried
     """
-    wa_training = pd.DataFrame()
-    wa_validation = pd.DataFrame()
+    training_results = []
+    validation_results = []
     
     X = np.asarray(X)
     y = np.asarray(y)
@@ -229,32 +230,35 @@ def combined_model_weighting(X, y, max_neighbor, max_farthest,
         model_knn.fit(X_train, y_train)
         pred_knn_train = model_knn.predict_proba(X_train)
         pred_knn_val = model_knn.predict_proba(X_validation)
+        knn_classes = model_knn.classes_
 
-        model_kfn = KFarthestClassifier(k=max_farthest)
+        model_kfn = KFarthestClassifier(n_farthest=max_farthest)
         model_kfn.fit(X_train, y_train)
         pred_kfn_train = model_kfn.predict_proba(X_train)
         pred_kfn_val = model_kfn.predict_proba(X_validation)
+        kfn_classes = model_kfn.classes_
 
+        # Ensure the classes from both models are the same
+        assert np.array_equal(knn_classes, kfn_classes), "The classes from KNN and KFN must match."
+        
         train_accuracies = []
         val_accuracies = []
         
         for weight in weight_settings:
+            # Weighted averaging of predictions
             pred_train_combined = pred_knn_train * weight + pred_kfn_train * (1 - weight)
             pred_val_combined = pred_knn_val * weight + pred_kfn_val * (1 - weight)
             
-            pred_train_labels = pd.DataFrame(
-                pred_train_combined,
-                columns=model_knn.classes_
-            ).idxmax(axis="columns").values
-            pred_val_labels = pd.DataFrame(
-                pred_val_combined,
-                columns=model_knn.classes_
-            ).idxmax(axis="columns").values
+            pred_train_labels = knn_classes[np.argmax(pred_train_combined, axis=1)]
+            pred_val_labels = knn_classes[np.argmax(pred_val_combined, axis=1)]
             
             train_accuracies.append(accuracy_score(y_train, pred_train_labels))
             val_accuracies.append(accuracy_score(y_validation, pred_val_labels))
         
-        wa_training[seed] = train_accuracies
-        wa_validation[seed] = val_accuracies
+        training_results.append(pd.DataFrame({seed: train_accuracies}))
+        validation_results.append(pd.DataFrame({seed: val_accuracies}))
+    
+    wa_training = pd.concat(training_results, axis=1)
+    wa_validation = pd.concat(validation_results, axis=1)
     
     return wa_training, wa_validation, weight_settings
